@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<h1>Image Page</h1>
+<h3>{{ page.name_title }}</h3>
+<p>{{ page.name_subtitle|richtext }}</p>
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="file" name="file_data" multiple>
+    <button type="submit">Upload &amp; Run</button>
+</form>
+
+{% if my_uploaded_file_names %}
+<h2>Uploaded Files</h2>
+<div class="thumbnails">
+    {% for url in my_uploaded_file_names %}
+    <a href="{{ url }}" target="_blank">
+        <img src="{{ url }}" style="max-width:150px; margin:5px;">
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if my_result_file_names %}
+<h2>Result Image</h2>
+<div class="thumbnails">
+    {% for url in my_result_file_names %}
+    <a href="{{ url }}" target="_blank">
+        <img src="{{ url }}" style="max-width:150px; margin:5px;">
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
