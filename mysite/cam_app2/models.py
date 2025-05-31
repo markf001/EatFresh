@@ -17,6 +17,8 @@ from torchvision import transforms
 from PIL import Image
 import cv2
 import numpy as np
+import textwrap
+
 
 # ─── GLOBAL SETUP ────────────────────────────────────────────
 
@@ -25,7 +27,8 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CLASSIFY_TRANSFORM = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225]),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225]),
 ])
 
 SEG_TRANSFORM = transforms.Compose([
@@ -51,8 +54,7 @@ def get_model():
                 self.base_model     = nn.Sequential(*list(base.children())[:-1])
                 self.shared_fc      = nn.Sequential(
                     nn.Linear(num_ftrs, 256),
-                    nn.ReLU(),
-                    nn.Dropout(0.2)
+                    nn.ReLU(), nn.Dropout(0.2)
                 )
                 self.freshness_head = nn.Linear(256, 3)
                 self.produce_head   = nn.Linear(256, 4)
@@ -79,21 +81,21 @@ _SEG_MODEL = None
 class UNet(nn.Module):
     def __init__(self):
         super().__init__()
-        def block(i,o):
+        def block(i, o):
             return nn.Sequential(
-                nn.Conv2d(i,o,3,padding=1), nn.ReLU(inplace=True),
-                nn.Conv2d(o,o,3,padding=1), nn.ReLU(inplace=True),
+                nn.Conv2d(i, o, 3, padding=1), nn.ReLU(inplace=True),
+                nn.Conv2d(o, o, 3, padding=1), nn.ReLU(inplace=True),
             )
-        self.encoder1 = block(3,64)
+        self.encoder1 = block(3, 64)
         self.pool1    = nn.MaxPool2d(2)
-        self.encoder2 = block(64,128)
+        self.encoder2 = block(64, 128)
         self.pool2    = nn.MaxPool2d(2)
-        self.middle   = block(128,256)
-        self.up1      = nn.ConvTranspose2d(256,128,2,stride=2)
-        self.decoder1 = block(256,128)
-        self.up2      = nn.ConvTranspose2d(128,64,2,stride=2)
-        self.decoder2 = block(128,64)
-        self.out      = nn.Conv2d(64,1,1)
+        self.middle   = block(128, 256)
+        self.up1      = nn.ConvTranspose2d(256, 128, 2, stride=2)
+        self.decoder1 = block(256, 128)
+        self.up2      = nn.ConvTranspose2d(128, 64, 2, stride=2)
+        self.decoder2 = block(128, 64)
+        self.out      = nn.Conv2d(64, 1, 1)
 
     def forward(self, x):
         e1 = self.encoder1(x)
@@ -149,12 +151,12 @@ class ImagePage(Page):
 
         for uploaded in files:
             # ── Save upload ──────────────────────────────
-            uid   = uuid.uuid4().hex
-            stem  = os.path.splitext(uploaded.name)[0]
-            ext   = uploaded.name.split('.')[-1]
-            fn    = f"{stem}_{uid}.{ext}"
-            rel_up= os.path.join("uploadedPics", fn)
-            abs_up= os.path.join(settings.MEDIA_ROOT, rel_up)
+            uid    = uuid.uuid4().hex
+            stem   = os.path.splitext(uploaded.name)[0]
+            ext    = uploaded.name.split('.')[-1]
+            fn     = f"{stem}_{uid}.{ext}"
+            rel_up = os.path.join("uploadedPics", fn)
+            abs_up = os.path.join(settings.MEDIA_ROOT, rel_up)
             os.makedirs(os.path.dirname(abs_up), exist_ok=True)
             with open(abs_up, "wb+") as dst:
                 for chunk in uploaded.chunks():
@@ -164,7 +166,7 @@ class ImagePage(Page):
             pil_img = Image.open(abs_up).convert("RGB")
 
             # ── Defaults ────────────────────────────────
-            produce, quality, advice = "Unknown", "Fresh", "Ready to eat 👍"
+            produce, quality, advice = "Unknown", "Fresh", ""
 
             # ── Classification ───────────────────────────
             x_cls = CLASSIFY_TRANSFORM(pil_img).unsqueeze(0).to(DEVICE)
@@ -172,37 +174,70 @@ class ImagePage(Page):
                 fres, prod = cls_model(x_cls)
 
                 # produce label
-                prod_p = torch.softmax(prod,1)[0].cpu().numpy()*100
-                pi     = int(prod_p.argmax())
-                produce= produce_labels[pi].title()
+                prod_p  = torch.softmax(prod,1)[0].cpu().numpy()*100
+                pi      = int(prod_p.argmax())
+                produce = produce_labels[pi].title()
 
                 # freshness probs
                 f_p, sr_p, r_p = (torch.softmax(fres,1)[0].cpu().numpy()*100)
 
-                # three-way only:
-                if   r_p >= 70:
-                    quality, advice = "Rotten",          "Not safe to eat... :("
+                # three-level advice
+                if r_p >= 70:
+                    quality = "Rotten"
+                    advice  = (
+                        f"The {produce.lower()} is rotten. "
+                        "It is unsafe to consume and should be discarded immediately."
+                    )
                 elif r_p >= 40:
-                    quality, advice = "Slightly Rotten", "Don't eat the rotten parts!"
+                    quality = "Slightly Rotten"
+                    advice  = (
+                        f"The {produce.lower()} is slightly rotten. "
+                        "It is recommended to carefully remove the affected areas before consuming.\n"
+                    )
                 else:
-                    quality, advice = "Fresh",           "Safe to eat! :D"
+                    quality = "Fresh"
+                    advice  = (
+                        f"The {produce.lower()} is fresh. "
+                        "It is safe to eat or keep in the fridge to keep it fresh. Enjoy!"
+                    )
 
             # ── Overlay text ───────────────────────────
             cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-            cv2.putText(cv_img, f"{produce}: {quality}", (10,40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-            cv2.putText(cv_img, advice, (10,80),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+            # first line
+            cv2.putText(
+                cv_img,
+                f"{produce}: {quality}",
+                (10, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0,255,0),
+                2,
+            )
+            # wrap long advice into 40-char lines
+            wrapped = textwrap.wrap(advice, width=40)
 
+            # draw each wrapped line, spacing 30px vertically
+            for i, line in enumerate(wrapped):
+                cv2.putText(
+                    cv_img,
+                    line,
+                    (10, 80 + i * 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 0),
+                    2,
+                )
             # ── Segmentation ────────────────────────────
             x_seg = SEG_TRANSFORM(pil_img).unsqueeze(0).to(DEVICE)
             with torch.no_grad():
                 mask_pred = seg_model(x_seg)[0,0].cpu().numpy()
                 mask      = (mask_pred > 0.5).astype(np.uint8)
 
-            mask = cv2.resize(mask,
-                              (cv_img.shape[1], cv_img.shape[0]),
-                              interpolation=cv2.INTER_NEAREST)
+            mask = cv2.resize(
+                mask,
+                (cv_img.shape[1], cv_img.shape[0]),
+                interpolation=cv2.INTER_NEAREST
+            )
             overlay = cv_img.copy()
             overlay[mask==1] = (0,0,255)
             cv_img = cv2.addWeighted(overlay, 0.5, cv_img, 0.5, 0)
@@ -216,5 +251,4 @@ class ImagePage(Page):
             context["my_result_file_names"].append(settings.MEDIA_URL + rel_res)
             context["my_advice"].append(advice)
 
-        # ── Must return here ─────────────────────────
         return render(request, self.template, context)
