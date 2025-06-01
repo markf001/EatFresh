@@ -1,26 +1,19 @@
-# cam_app2/models.py
-
 import os
 import uuid
+import cv2
+import numpy as np
+import textwrap
+import torch
+import torch.nn as nn
+import torchvision.models as tv_models
 
 from django.conf import settings
 from django.db import models
 from django.shortcuts import render
-
 from wagtail.core.models import Page
 from wagtail.admin.edit_handlers import FieldPanel, MultiFieldPanel
-
-import torch
-import torch.nn as nn
-import torchvision.models as tv_models
 from torchvision import transforms
 from PIL import Image
-import cv2
-import numpy as np
-import textwrap
-
-
-# ─── GLOBAL SETUP ────────────────────────────────────────────
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -35,8 +28,6 @@ SEG_TRANSFORM = transforms.Compose([
     transforms.Resize((256, 256)),
     transforms.ToTensor(),
 ])
-
-# ─── CLASSIFIER LOADER ───────────────────────────────────────
 
 _GLOBAL_CLS_MODEL = None
 
@@ -73,8 +64,6 @@ def get_model():
         _GLOBAL_CLS_MODEL = model
 
     return _GLOBAL_CLS_MODEL
-
-# ─── SEGMENTATION LOADER ────────────────────────────────────
 
 _SEG_MODEL = None
 
@@ -118,8 +107,6 @@ def get_seg_model():
         _SEG_MODEL = seg
     return _SEG_MODEL
 
-# ─── WAGTAIL PAGE ────────────────────────────────────────────
-
 class ImagePage(Page):
     template   = "cam_app2/image.html"
     max_count  = 1
@@ -150,7 +137,6 @@ class ImagePage(Page):
         produce_labels = ['apple','banana','potato','carrot']
 
         for uploaded in files:
-            # ── Save upload ──────────────────────────────
             uid    = uuid.uuid4().hex
             stem   = os.path.splitext(uploaded.name)[0]
             ext    = uploaded.name.split('.')[-1]
@@ -165,30 +151,25 @@ class ImagePage(Page):
 
             pil_img = Image.open(abs_up).convert("RGB")
 
-            # ── Defaults ────────────────────────────────
             produce, quality, advice = "Unknown", "Fresh", ""
 
-            # ── Classification ───────────────────────────
             x_cls = CLASSIFY_TRANSFORM(pil_img).unsqueeze(0).to(DEVICE)
             with torch.no_grad():
                 fres, prod = cls_model(x_cls)
 
-                # produce label
                 prod_p  = torch.softmax(prod,1)[0].cpu().numpy()*100
                 pi      = int(prod_p.argmax())
                 produce = produce_labels[pi].title()
 
-                # freshness probs
                 f_p, sr_p, r_p = (torch.softmax(fres,1)[0].cpu().numpy()*100)
 
-                # three-level advice
-                if r_p >= 70:
+                if r_p >= 50:
                     quality = "Rotten"
                     advice  = (
                         f"The {produce.lower()} is rotten. "
                         "It is unsafe to consume and should be discarded immediately."
                     )
-                elif r_p >= 40:
+                elif r_p >= 10:
                     quality = "Slightly Rotten"
                     advice  = (
                         f"The {produce.lower()} is slightly rotten. "
@@ -201,9 +182,7 @@ class ImagePage(Page):
                         "It is safe to eat or keep in the fridge to keep it fresh. Enjoy!"
                     )
 
-            # ── Overlay text ───────────────────────────
             cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-            # first line
             cv2.putText(
                 cv_img,
                 f"{produce}: {quality}",
@@ -213,10 +192,8 @@ class ImagePage(Page):
                 (0,255,0),
                 2,
             )
-            # wrap long advice into 40-char lines
             wrapped = textwrap.wrap(advice, width=40)
 
-            # draw each wrapped line, spacing 30px vertically
             for i, line in enumerate(wrapped):
                 cv2.putText(
                     cv_img,
@@ -227,7 +204,6 @@ class ImagePage(Page):
                     (0, 0, 0),
                     2,
                 )
-            # ── Segmentation ────────────────────────────
             x_seg = SEG_TRANSFORM(pil_img).unsqueeze(0).to(DEVICE)
             with torch.no_grad():
                 mask_pred = seg_model(x_seg)[0,0].cpu().numpy()
@@ -242,7 +218,6 @@ class ImagePage(Page):
             overlay[mask==1] = (0,0,255)
             cv_img = cv2.addWeighted(overlay, 0.5, cv_img, 0.5, 0)
 
-            # ── Save result ─────────────────────────────
             rel_res = os.path.join("Result", fn)
             abs_res = os.path.join(settings.MEDIA_ROOT, rel_res)
             os.makedirs(os.path.dirname(abs_res), exist_ok=True)

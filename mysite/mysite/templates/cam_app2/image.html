@@ -31,7 +31,7 @@
 
       .choose-file-button {
           flex-shrink: 0;
-          /* background-color: rgba(255, 255, 255, 0.04); */
+          /*background-color: rgb(6, 180, 32);*/
           border: 1px solid rgba(255, 255, 255, 0.1);
           border-radius: 3px;
           padding: 8px 15px;
@@ -78,7 +78,7 @@
           var reader = new FileReader();
           reader.onload = function (e) {
           var img = $("<img />");
-          img.attr("style", "width: 150px; height:100px; padding: 10px");
+          img.attr("style", "width: 100px; height:50px; padding: 10px");
           img.attr("src", e.target.result);
           img.attr("name", name+index);
           index=index+1;
@@ -99,7 +99,6 @@
                 <button class="btn btn-primary" type="submit" id="inputGroupFileAddon04">Process!</button>
           </div>
     </form>
-    <!--<h6>List of selected/uploaded files <span style="font-style: italic">(click to open in new tab)</span>: </h6> -->
     <ul>
 
     {% for my_file1 in my_uploaded_file_names %}
@@ -124,7 +123,7 @@
       </li>
     </ul>
 
-    <div class="tab-content" id="myTabContent" style=" ">
+    <div class="tab-content" id="myTabContent">
       <div class="tab-pane fade show active" id="home" role="tabpanel" aria-labelledby="image-tab">
         <br>
         <div id="carouselExampleIndicators" class="carousel slide" data-ride="carousel">
