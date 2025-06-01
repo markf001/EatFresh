@@ -169,7 +169,7 @@ class ImagePage(Page):
                         f"The {produce.lower()} is rotten. "
                         "It is unsafe to consume and should be discarded immediately."
                     )
-                elif r_p >= 10:
+                elif r_p >= 30:
                     quality = "Slightly Rotten"
                     advice  = (
                         f"The {produce.lower()} is slightly rotten. "
